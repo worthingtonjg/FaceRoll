@@ -1,0 +1,68 @@
+﻿<Page
+    x:Name="ManageMeetings"
+    x:Class="FaceRoll.Pages.ManageMeetingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:FaceRoll.Pages"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:FaceRoll.ViewModels"
+    xmlns:c="using:FaceRoll.Common"
+    mc:Ignorable="d"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Page.Resources>
+        <c:DateTimeToDateTimeOffsetConverter x:Key="DateTimeToDateTimeOffsetConverter"/>
+        <c:DateFormatConverter x:Key="DateFormatConverter" />
+    </Page.Resources>
+
+    <Page.DataContext>
+        <vm:ManageMeetingsViewModel></vm:ManageMeetingsViewModel>
+    </Page.DataContext>
+    
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"></RowDefinition>
+            <RowDefinition Height="Auto"></RowDefinition>
+            <RowDefinition></RowDefinition>
+            <RowDefinition Height="Auto"></RowDefinition>
+        </Grid.RowDefinitions>
+
+        <Border Background="DarkRed">
+            <TextBlock FontSize="18" Margin="10" FontWeight="Bold" HorizontalAlignment="Center" Foreground="White">Face Roll - Manage Meetings</TextBlock>
+        </Border>
+
+        <TextBox Grid.Row="1" Text="{Binding LocalStoragePath}" IsReadOnly="True" BorderThickness="0" Foreground="LightGray" />
+
+        <ListBox ItemsSource="{Binding Meetings}" Grid.Row="2">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding MeetingDate, Converter={StaticResource DateFormatConverter}, ConverterParameter='{}{0:MMM dd yyy}'}" Width="100"></TextBlock>
+                        <TextBlock Text="{Binding MeetingName}" ToolTipService.ToolTip="{Binding MeetingName}"  Width="300" Margin="0,0,10,0" TextTrimming="CharacterEllipsis" />
+                        <Button Command="{Binding DataContext.StartMeetingCommand, ElementName=ManageMeetings}" CommandParameter="{Binding }" Margin="5,0,0,0">Start</Button>
+                        <Button Command="{Binding DataContext.ViewMeetingCommand, ElementName=ManageMeetings}" CommandParameter="{Binding }" Margin="5,0,0,0">View</Button>
+                        <Button Command="{Binding DataContext.DeleteMeetingCommand, ElementName=ManageMeetings}" CommandParameter="{Binding }" Margin="5,0,0,0">Delete</Button>
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        
+        <Grid Grid.Row="3">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"></ColumnDefinition>
+                <ColumnDefinition Width="Auto"></ColumnDefinition>
+                <ColumnDefinition Width="Auto"></ColumnDefinition>
+                <ColumnDefinition></ColumnDefinition>
+                <ColumnDefinition Width="Auto"></ColumnDefinition>
+            </Grid.ColumnDefinitions>
+            
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" Margin="20,0,5,0">Meeting Date:</TextBlock>
+            <DatePicker Date="{Binding NewMeetingDate, Converter={StaticResource DateTimeToDateTimeOffsetConverter}, Mode=TwoWay}"  Grid.Column="1" Margin="10,0"></DatePicker>
+            
+            <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="20,0,5,0">Meeting Name:</TextBlock>
+            <TextBox Text="{Binding NewMeetingName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Grid.Column="3" VerticalAlignment="Center"></TextBox>
+            <Button Command="{Binding AddMeetingCommand}" Grid.Column="4" Width="150" Margin="10">Add Meeting</Button>
+        </Grid>
+    </Grid>
+</Page>
