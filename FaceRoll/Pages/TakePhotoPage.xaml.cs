@@ -34,8 +34,7 @@ namespace FaceRoll.Pages
                 App.ActiveMeeting = e.Parameter as Meeting;
             }
 
-            ViewModel.SetCaptureElement(PreviewControl, FacesCanvas);
-            ViewModel.SetDispatcher(Dispatcher);
+            ViewModel.Init(Dispatcher, PreviewControl, FacesCanvas);
 
             await ViewModel.StartPreviewAsync();
         }

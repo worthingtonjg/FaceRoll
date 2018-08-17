@@ -3,7 +3,7 @@ using DataModels;
 using FaceRoll.Common;
 using FaceRoll.Model;
 using FaceRoll.Pages;
-using Microsoft.ProjectOxford.Face.Contract;
+using Microsoft.Azure.CognitiveServices.Vision.Face.Models;
 using System;
 using System.Windows.Input;
 
@@ -40,7 +40,7 @@ namespace FaceRoll.ViewModels
 
                         var personGroupId = SettingsHelper.ReadSettings(SettingsHelper.FaceApiPersonGroup);
 
-                        CreatePersonResult result = await faceHelper.AddPerson(personGroupId, PersonName);
+                        var result = await faceHelper.AddPerson(personGroupId, PersonName);
                         await faceHelper.AddImageToPerson(personGroupId, result.PersonId, image);
                         await faceHelper.TrainGroup(personGroupId);
 

@@ -38,6 +38,7 @@ namespace FaceRoll.ViewModels
         private DisplayRequest _displayRequest = new DisplayRequest();
         private CaptureElement _captureElement;
         private Canvas _faceCanvas;
+        private FaceHelper _faceHelper;
         private CoreDispatcher _dispatcher;
         private MediaCapture _mediaCapture;
         private DispatcherTimer _timer;
@@ -73,15 +74,17 @@ namespace FaceRoll.ViewModels
             }
         }
 
-        public void SetDispatcher(CoreDispatcher coreDispatcher)
+        public async void Init(CoreDispatcher coreDispatcher, CaptureElement element, Canvas faceCanvas)
         {
             _dispatcher = coreDispatcher;
-        }
-
-        public void SetCaptureElement(CaptureElement element, Canvas faceCanvas)
-        {
             _captureElement = element;
             _faceCanvas = faceCanvas;
+
+            _faceHelper = new FaceHelper(
+                SettingsHelper.ReadSettings(SettingsHelper.FaceApiSubscriptionKey),
+                SettingsHelper.ReadSettings(SettingsHelper.FaceApiRoot));
+
+            await _faceHelper.InitFaceGroup(SettingsHelper.ReadSettings(SettingsHelper.FaceApiPersonGroup));
         }
 
         public async Task StartPreviewAsync()
@@ -220,6 +223,8 @@ namespace FaceRoll.ViewModels
                             {
                                 if (matches.First().Person.Name.ToLower() == "unknown")
                                 {
+                                    ClipboardHelper clipboardHelper = new ClipboardHelper();
+                                    clipboardHelper.ImageToClipboard(file);
                                     NavigationHelper.Navigate(typeof(FaceNotFoundPage), false);
                                 }
                                 else
@@ -303,17 +308,14 @@ namespace FaceRoll.ViewModels
             return file;
         }
 
-        private static async Task<List<Model.Identification>> AnalyzePhoto(StorageFile file)
+        private async Task<List<Model.Identification>> AnalyzePhoto(StorageFile file)
         {
             var clipboardHelper = new ClipboardHelper();
 
-            var faceHelper = new FaceHelper(
-                SettingsHelper.ReadSettings(SettingsHelper.FaceApiSubscriptionKey),
-                SettingsHelper.ReadSettings(SettingsHelper.FaceApiRoot));
-
             var personGroupId = SettingsHelper.ReadSettings(SettingsHelper.FaceApiPersonGroup);
 
-            var matches = await faceHelper.Identify(personGroupId, file);
+            var matches = await _faceHelper.Identify(personGroupId, file);
+
             return matches;
         }
 

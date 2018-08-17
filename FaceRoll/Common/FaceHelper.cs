@@ -1,15 +1,14 @@
 ﻿using FaceRoll.Model;
-using Microsoft.ProjectOxford.Face;
-using Microsoft.ProjectOxford.Face.Contract;
+using Microsoft.Azure.CognitiveServices.Vision.Face;
+using Microsoft.Azure.CognitiveServices.Vision.Face.Models;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text;
+using System.Net.Http;
 using System.Threading.Tasks;
-using Windows.Graphics.Imaging;
 using Windows.Storage;
 using Windows.UI;
 using Windows.UI.Xaml.Media.Imaging;
@@ -19,20 +18,51 @@ namespace FaceRoll.Common
 {
     public class FaceHelper
     {
-        private readonly IFaceServiceClient faceServiceClient;
+        private readonly IFaceClient _faceClient;
 
         public FaceHelper(string subscriptionKey, string apiRoot)
         {
-            faceServiceClient = new FaceServiceClient(subscriptionKey, apiRoot);
+            _faceClient = new FaceClient(new ApiKeyServiceClientCredentials(subscriptionKey), new DelegatingHandler[] { })
+            {
+                BaseUri = new Uri(apiRoot)
+            };
         }
 
-        public async Task<Face[]> Detect(StorageFile file)
+        public async Task InitFaceGroup(string id, string name = null)
         {
-            IEnumerable<FaceAttributeType> faceAttributes = new FaceAttributeType[] { FaceAttributeType.Gender, FaceAttributeType.Age, FaceAttributeType.Smile, FaceAttributeType.Emotion, FaceAttributeType.Glasses, FaceAttributeType.Hair };
+            if(name == null)
+            {
+                name = id;
+            }
+
+            try
+            {
+                PersonGroup group = await _faceClient.PersonGroup.GetAsync(id);
+            }
+            catch (APIErrorException ex)
+            {
+                if (ex.Body.Error.Code == "PersonGroupNotFound")
+                {
+                    await _faceClient.PersonGroup.CreateAsync(id, name);
+                    await _faceClient.PersonGroup.TrainAsync(id);
+                }
+                else
+                {
+                    throw;
+                }
+            }
+        }
+
+        public async Task<IList<DetectedFace>> Detect(StorageFile file, IList<FaceAttributeType> faceAttributes = null)
+        {
+            if (faceAttributes == null)
+            {
+                faceAttributes = new FaceAttributeType[] { FaceAttributeType.Gender, FaceAttributeType.Age, FaceAttributeType.Smile, FaceAttributeType.Emotion, FaceAttributeType.Glasses, FaceAttributeType.Hair };
+            }
 
             using (var stream = await file.OpenStreamForReadAsync())
             {
-                var faces = await faceServiceClient.DetectAsync(stream, returnFaceId: true, returnFaceLandmarks: false, returnFaceAttributes: faceAttributes);
+                var faces = await _faceClient.Face.DetectWithStreamAsync(stream, returnFaceId: true, returnFaceLandmarks: false, returnFaceAttributes: faceAttributes);
 
                 Debug.WriteLine(JsonConvert.SerializeObject(faces, Formatting.Indented));
 
@@ -40,7 +70,7 @@ namespace FaceRoll.Common
             }
         }
 
-        public async Task<WriteableBitmap> MarkFaces(StorageFile file, Face[] faces)
+        public async Task<WriteableBitmap> MarkFaces(StorageFile file, DetectedFace[] faces)
         {
             if (faces.Length == 0) return null;
 
@@ -52,7 +82,7 @@ namespace FaceRoll.Common
 
                     for (int i = 0; i < faces.Length; ++i)
                     {
-                        Face face = faces[i];
+                        DetectedFace face = faces[i];
 
                         wb.DrawRectangle(
                             face.FaceRectangle.Left,
@@ -72,154 +102,123 @@ namespace FaceRoll.Common
         {
             var result = new List<Identification>();
 
-            using (var stream = await file.OpenStreamForReadAsync())
+            try
             {
-                IEnumerable<FaceAttributeType> faceAttributes = new FaceAttributeType[] { FaceAttributeType.Gender, FaceAttributeType.Age, FaceAttributeType.Smile, FaceAttributeType.Emotion, FaceAttributeType.Glasses, FaceAttributeType.Hair };
+                var faces = await Detect(file);
 
-                var faces = await faceServiceClient.DetectAsync(stream, true, false, faceAttributes);
-                var faceIds = faces.Select(face => face.FaceId).ToArray();
+                var faceIds = faces.Select(face => face.FaceId.GetValueOrDefault()).ToList();
 
-                if (faceIds.Length == 0)
+                if (faceIds.Count == 0)
                 {
                     Debug.WriteLine("No Faces Found");
                     return result;
                 }
 
-                var identities = await faceServiceClient.IdentifyAsync(faceIds, personGroupId, null);
+                TrainingStatusType status = await IsTrainingComplete(personGroupId);
 
-                foreach (var identifyResult in identities)
+                IList<IdentifyResult> identities = new List<IdentifyResult>();
+                if (status != TrainingStatusType.Failed)
                 {
-                    Debug.WriteLine("Result of face: {0}", identifyResult.FaceId);
-                    if (identifyResult.Candidates.Length == 0)
+
+                    identities = await _faceClient.Face.IdentifyAsync(personGroupId, faceIds);
+                }
+
+                foreach (var face in faces)
+                {
+                    var identifyResult = identities.Where(i => i.FaceId == face.FaceId).FirstOrDefault();
+
+                    var identification = new Identification
+                    (
+                        person: new Person { Name = "Unknown" },
+                        confidence: 1,
+                        face: face,
+                        identifyResult: identifyResult
+                    );
+
+                    result.Add(identification);
+
+                    if (identifyResult != null && identifyResult.Candidates.Count > 0)
                     {
-                        result.Add(new Identification("UnKnown", 1, identifyResult, faces.Where(f => f.FaceId == identifyResult.FaceId).FirstOrDefault()));
-                    }
-                    else
-                    {
+
                         // Get top 1 among all candidates returned
-                        var candidateId = identifyResult.Candidates[0].PersonId;
-                        var confidence = identifyResult.Candidates[0].Confidence;
+                        IdentifyCandidate candidate = identifyResult.Candidates[0];
 
-                        var person = await faceServiceClient.GetPersonInPersonGroupAsync(personGroupId, candidateId);
+                        var person = await _faceClient.PersonGroupPerson.GetAsync(personGroupId, candidate.PersonId);
 
-                        result.Add(new Identification(person, confidence, identifyResult, faces.Where(f => f.FaceId == identifyResult.FaceId).FirstOrDefault()));
+                        identification.Person = person;
+                        identification.Confidence = candidate.Confidence;
                     }
                 }
+            }
+            catch(Exception ex)
+            {
+                Debug.WriteLine(ex.Message);
             }
 
             return result;
         }
 
-        public async Task<PersonGroup[]> ListGroups()
+        public async Task<IList<PersonGroup>> ListGroups()
         {
-            PersonGroup[] groups = await faceServiceClient.ListPersonGroupsAsync();
+            var groups = await _faceClient.PersonGroup.ListAsync();
 
             return groups;
         }
 
         public async Task CreatePersonGroup(string personGroupId, string personGroupName)
         {
-            await faceServiceClient.CreatePersonGroupAsync(personGroupId, personGroupName);
+            await _faceClient.PersonGroup.CreateAsync(personGroupId, personGroupName);
         }
 
         public async Task DeletePersonGroup(string personGroupId)
         {
-            await faceServiceClient.DeletePersonGroupAsync(personGroupId);
+            await _faceClient.PersonGroup.DeleteAsync(personGroupId);
         }
 
-        public async Task<Person[]> GetPersonsInGroup(string personGroupId)
+        public async Task<IList<Person>> GetPersonsInGroup(string personGroupId)
         {
-            Person[] persons = await faceServiceClient.ListPersonsInPersonGroupAsync(personGroupId);
+            var persons = await _faceClient.PersonGroupPerson.ListAsync(personGroupId);
             
             return persons;
         }
 
-        public async Task<CreatePersonResult> AddPerson(string personGroupId, string personName)
+        public async Task<Person> AddPerson(string personGroupId, string personName)
         {
-            CreatePersonResult result = await faceServiceClient.CreatePersonInPersonGroupAsync(personGroupId, personName);
+            Person result = await _faceClient.PersonGroupPerson.CreateAsync(personGroupId, personName);
 
             return result;
         }
 
         public async Task DeletePerson(string personGroupId, Guid personId)
         {
-            await faceServiceClient.DeletePersonFromPersonGroupAsync(personGroupId, personId);
+            await _faceClient.PersonGroupPerson.DeleteAsync(personGroupId, personId);
         }
 
         public async Task AddImageToPerson(string personGroupId, Guid personId, StorageFile file)
         {
             using (var s = await file.OpenStreamForReadAsync())
             {
-                await faceServiceClient.AddPersonFaceInPersonGroupAsync(personGroupId, personId, s);
+                await _faceClient.PersonGroupPerson.AddPersonFaceFromStreamAsync(personGroupId, personId, s);
             }
         }
 
         public async Task<Person> GetPerson(string personGroupId, Guid personId)
         {
-            Person person = await faceServiceClient.GetPersonInPersonGroupAsync(personGroupId, personId);
+            var person = await _faceClient.PersonGroupPerson.GetAsync(personGroupId, personId);
 
             return person;
         }
 
         public async Task TrainGroup(string personGroupId)
         {
-            await faceServiceClient.TrainPersonGroupAsync(personGroupId);
+            await _faceClient.PersonGroup.TrainAsync(personGroupId);
         }
 
-        public async Task<string> IsTrainingComplete(string personGroupId)
+        public async Task<TrainingStatusType> IsTrainingComplete(string personGroupId)
         {
-            TrainingStatus status = await faceServiceClient.GetPersonGroupTrainingStatusAsync(personGroupId);
+            TrainingStatus status = await _faceClient.PersonGroup.GetTrainingStatusAsync(personGroupId);
 
-            return status.Status.ToString();
-        }
-
-        public string DescribeImage(List<Identification> people)
-        {
-            if (people == null || people.Count == 0)
-            {
-                return "I do not see any faces.";
-            }
-
-            var unknownCount = people.Count(p => p.Person.Name.ToLower() == "unknown");
-            var known = people.Where(p => p.Person.Name.ToLower() != "unknown").Select(p => p.Person.Name).ToList();
-
-            string message = string.Empty;
-
-            if (known.Count > 0)
-            {
-                if (known.Count == 1)
-                {
-                    message = $"I see {known[0]}.  ";
-                }
-                else
-                {
-                    message = $"I see {people.Count} faces.  ";
-                    message += "I recognize: ";
-                    foreach (var name in known)
-                    {
-                        message += name + ", ";
-                    }
-                }
-            }
-
-            if (unknownCount > 0)
-            {
-                if (known.Count > 0)
-                {
-                    message += " and ";
-                }
-
-                if (unknownCount == 1)
-                {
-                    message += $"I see 1 face I do not recognize";
-                }
-                else
-                {
-                    message += $"I see {unknownCount} faces I do not recognize";
-                }
-            }
-
-            return message;
+            return status.Status;
         }
     }
 }

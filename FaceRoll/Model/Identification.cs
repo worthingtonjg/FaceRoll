@@ -1,4 +1,5 @@
-﻿using Microsoft.ProjectOxford.Face.Contract;
+﻿
+using Microsoft.Azure.CognitiveServices.Vision.Face.Models;
 
 namespace FaceRoll.Model
 {
@@ -6,11 +7,11 @@ namespace FaceRoll.Model
     {
         public Person Person { get; set; }
         public IdentifyResult IdentifyResult { get; set; }
-        public Face Face { get; set; }
+        public DetectedFace Face { get; set; }
 
         public double Confidence;
 
-        public Identification(string name, double confidence, IdentifyResult identifyResult, Face face)
+        public Identification(string name, double confidence, IdentifyResult identifyResult, DetectedFace face)
         {
             Person = new Person();
             Person.Name = name;
@@ -19,7 +20,7 @@ namespace FaceRoll.Model
             Confidence = confidence;
         }
 
-        public Identification(Person person, double confidence, IdentifyResult identifyResult, Face face)
+        public Identification(Person person, double confidence, IdentifyResult identifyResult, DetectedFace face)
         {
             Person = person;
             IdentifyResult = identifyResult;
